@@ -22,7 +22,7 @@ This document describes the goals, data‑flow, work‑distribution strategy, an
     * maximum query time. 
 
 
-## Non Goals
+## Non goals
 
 * Support for query types other than `SELECT`.
 * Support for input formats other than CSV.
@@ -69,7 +69,7 @@ The tool is controlled by a small set of configuration parameters:
 * number of concurrent workers, 
 * TimescaleDB connection settings, 
 * query timeout, 
-* input source (CSV file of standard input)
+* input source (CSV file or standard input)
 
 The exact flag names are left out at this stage.  
 
