@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/pBiczysko/tsbench/worker"
 )
 
 var (
@@ -16,16 +18,9 @@ var (
 	ErrReadingCSV    = errors.New("error while reading csv")
 )
 
-// TODO: find a suitable package
-type JobParams struct {
-	Hostname  string
-	StartTime time.Time
-	EndTime   time.Time
-}
-
 // ReadInto takes a reader and a channel. It reads and validates the csv header and then goes row by row
-// parses data in JobParams and sends it onto out channel.
-func ReadInto(ctx context.Context, in io.Reader, out chan<- JobParams) error {
+// parses data in worker.JobParams and sends it onto out channel.
+func ReadInto(ctx context.Context, in io.Reader, out chan<- worker.JobParams) error {
 	r := csv.NewReader(in)
 	r.ReuseRecord = true
 	r.FieldsPerRecord = 3
@@ -86,22 +81,22 @@ func validateHeader(header []string) error {
 	return nil
 }
 
-func toJobParams(in []string) (JobParams, error) {
+func toJobParams(in []string) (worker.JobParams, error) {
 	if in[0] == "" {
-		return JobParams{}, errors.New("hostname needs to be provided")
+		return worker.JobParams{}, errors.New("hostname needs to be provided")
 	}
 
 	st, err := time.Parse(time.DateTime, in[1])
 	if err != nil {
-		return JobParams{}, fmt.Errorf("parsing start_time %s: %w", in[1], err)
+		return worker.JobParams{}, fmt.Errorf("parsing start_time %s: %w", in[1], err)
 	}
 
 	et, err := time.Parse(time.DateTime, in[2])
 	if err != nil {
-		return JobParams{}, fmt.Errorf("parsing end_time %s: %w", in[2], err)
+		return worker.JobParams{}, fmt.Errorf("parsing end_time %s: %w", in[2], err)
 	}
 
-	return JobParams{
+	return worker.JobParams{
 		Hostname:  in[0],
 		StartTime: st,
 		EndTime:   et,

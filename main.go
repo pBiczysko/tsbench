@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"os"
+	"time"
 
 	"github.com/pBiczysko/tsbench/csvstream"
+	"github.com/pBiczysko/tsbench/worker"
 )
 
 type config struct {
@@ -58,7 +61,7 @@ func run(ctx context.Context) error {
 		input = f
 	}
 
-	jobs := make(chan csvstream.JobParams, 10)
+	jobs := make(chan worker.JobParams, 10)
 
 	go func() {
 		err := csvstream.ReadInto(ctx, input, jobs)
@@ -68,9 +71,20 @@ func run(ctx context.Context) error {
 		close(jobs)
 	}()
 
-	for r := range jobs {
-		fmt.Println(r)
-	}
+	results := make(chan worker.Result)
+
+	go func() {
+		for r := range results {
+			fmt.Println(r)
+		}
+	}()
+
+	w := worker.New(jobs, results, func(params worker.JobParams) (time.Duration, error) {
+		return time.Duration(rand.Int64N(100)), nil
+	})
+
+	w.Process(ctx)
+	close(results)
 
 	return nil
 }

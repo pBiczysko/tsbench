@@ -10,13 +10,14 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/pBiczysko/tsbench/csvstream"
+	"github.com/pBiczysko/tsbench/worker"
 )
 
 func TestReadInto(t *testing.T) {
-	type check func(t *testing.T, params []csvstream.JobParams, err error)
+	type check func(t *testing.T, params []worker.JobParams, err error)
 
 	hasNoError := func() check {
-		return func(t *testing.T, _ []csvstream.JobParams, err error) {
+		return func(t *testing.T, _ []worker.JobParams, err error) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -24,15 +25,15 @@ func TestReadInto(t *testing.T) {
 	}
 
 	hasError := func(expError error) check {
-		return func(t *testing.T, _ []csvstream.JobParams, err error) {
+		return func(t *testing.T, _ []worker.JobParams, err error) {
 			if !errors.Is(err, expError) {
 				t.Fatalf("expected error to be % v got: %v", expError, err)
 			}
 		}
 	}
 
-	hasJobParams := func(expParams []csvstream.JobParams) check {
-		return func(t *testing.T, params []csvstream.JobParams, _ error) {
+	hasJobParams := func(expParams []worker.JobParams) check {
+		return func(t *testing.T, params []worker.JobParams, _ error) {
 			if diff := cmp.Diff(params, expParams); diff != "" {
 				t.Errorf("result mismatch (-got +want):\n%s", diff)
 			}
@@ -49,7 +50,7 @@ func TestReadInto(t *testing.T) {
 			input: linesReader("hostname,start_time,end_time", "host_000008,2017-01-01 08:59:22,2017-01-01 09:59:22"),
 			checks: []check{
 				hasNoError(),
-				hasJobParams([]csvstream.JobParams{
+				hasJobParams([]worker.JobParams{
 					{
 						Hostname:  "host_000008",
 						StartTime: time.Date(2017, 1, 1, 8, 59, 22, 0, time.UTC),
@@ -118,7 +119,7 @@ func TestReadInto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := make(chan csvstream.JobParams, 100)
+			results := make(chan worker.JobParams, 100)
 			err := csvstream.ReadInto(context.Background(), tt.input, results)
 			close(results)
 			res := drainResults(results)
@@ -134,8 +135,8 @@ func linesReader(lines ...string) *strings.Reader {
 	return strings.NewReader(strings.Join(lines, "\n"))
 }
 
-func drainResults(in <-chan csvstream.JobParams) []csvstream.JobParams {
-	out := make([]csvstream.JobParams, 0)
+func drainResults(in <-chan worker.JobParams) []worker.JobParams {
+	out := make([]worker.JobParams, 0)
 	for r := range in {
 		out = append(out, r)
 	}
