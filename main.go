@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"os"
-	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pBiczysko/tsbench/bench"
 	"github.com/pBiczysko/tsbench/csvstream"
+	"github.com/pBiczysko/tsbench/repo"
 )
 
 type config struct {
@@ -50,6 +50,17 @@ func run(ctx context.Context) error {
 
 	flag.Parse()
 
+	pool, err := pgxpool.New(ctx, "postgres://postgres:password@127.0.0.1:5432/homework")
+	if err != nil {
+		return fmt.Errorf("creating db pool: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("running ping on db: %w", err)
+	}
+	repo := repo.New(pool, 0)
+
 	var input io.Reader
 	input = os.Stdin
 
@@ -63,7 +74,7 @@ func run(ctx context.Context) error {
 		input = f
 	}
 
-	jobs := make(chan bench.JobParams, 10)
+	jobs := make(chan bench.JobParams, 201)
 
 	go func() {
 		err := csvstream.ReadInto(ctx, input, jobs)
@@ -73,17 +84,11 @@ func run(ctx context.Context) error {
 		}
 		close(jobs)
 	}()
-	m := mock{}
-	b := bench.New(jobs, cfg.workers, m)
+
+	b := bench.New(jobs, cfg.workers, repo)
 
 	summary := b.Process(ctx)
 	fmt.Println(summary)
 
 	return nil
-}
-
-type mock struct{}
-
-func (m mock) GetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error) {
-	return time.Duration(rand.Int63n(100) + 1), nil
 }
