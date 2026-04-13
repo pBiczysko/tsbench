@@ -1,4 +1,4 @@
-package csvstream_test
+package csvstream
 
 import (
 	"context"
@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/pBiczysko/tsbench/csvstream"
-	"github.com/pBiczysko/tsbench/worker"
+	"github.com/pBiczysko/tsbench/bench"
 )
 
 func TestReadInto(t *testing.T) {
-	type check func(t *testing.T, params []worker.JobParams, err error)
+	type check func(t *testing.T, params []bench.JobParams, err error)
 
 	hasNoError := func() check {
-		return func(t *testing.T, _ []worker.JobParams, err error) {
+		return func(t *testing.T, _ []bench.JobParams, err error) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -25,15 +24,15 @@ func TestReadInto(t *testing.T) {
 	}
 
 	hasError := func(expError error) check {
-		return func(t *testing.T, _ []worker.JobParams, err error) {
+		return func(t *testing.T, _ []bench.JobParams, err error) {
 			if !errors.Is(err, expError) {
 				t.Fatalf("expected error to be % v got: %v", expError, err)
 			}
 		}
 	}
 
-	hasJobParams := func(expParams []worker.JobParams) check {
-		return func(t *testing.T, params []worker.JobParams, _ error) {
+	hasJobParams := func(expParams []bench.JobParams) check {
+		return func(t *testing.T, params []bench.JobParams, _ error) {
 			if diff := cmp.Diff(params, expParams); diff != "" {
 				t.Errorf("result mismatch (-got +want):\n%s", diff)
 			}
@@ -50,7 +49,7 @@ func TestReadInto(t *testing.T) {
 			input: linesReader("hostname,start_time,end_time", "host_000008,2017-01-01 08:59:22,2017-01-01 09:59:22"),
 			checks: []check{
 				hasNoError(),
-				hasJobParams([]worker.JobParams{
+				hasJobParams([]bench.JobParams{
 					{
 						Hostname:  "host_000008",
 						StartTime: time.Date(2017, 1, 1, 8, 59, 22, 0, time.UTC),
@@ -63,64 +62,64 @@ func TestReadInto(t *testing.T) {
 			name:  "invalid_header_hostname",
 			input: linesReader("invalid_host,start_time,end_time"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidHeader),
+				hasError(ErrInvalidHeader),
 			},
 		},
 		{
 			name:  "invalid_header_start_time",
 			input: linesReader("hostname,invalid_start_time,end_time"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidHeader),
+				hasError(ErrInvalidHeader),
 			},
 		},
 		{
 			name:  "invalid_header_end_time",
 			input: linesReader("hostname,start_time,invalid_end_time"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidHeader),
+				hasError(ErrInvalidHeader),
 			},
 		},
 		{
 			name:  "invalid_row_hostname_missing",
 			input: linesReader("hostname,start_time,end_time", ",2017-01-01 08:59:22,2017-01-01 09:59:22"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidRow),
+				hasError(ErrInvalidRow),
 			},
 		},
 		{
 			name:  "invalid_row_invalid_start_time_format",
 			input: linesReader("hostname,start_time,end_time", "host_000008,2017-01-01,2017-01-01 09:59:22"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidRow),
+				hasError(ErrInvalidRow),
 			},
 		},
 		{
 			name:  "invalid_row_invalid_end_time_format",
 			input: linesReader("hostname,start_time,end_time", "host_000008,2017-01-01 08:59:22,2017-01-01"),
 			checks: []check{
-				hasError(csvstream.ErrInvalidRow),
+				hasError(ErrInvalidRow),
 			},
 		},
 		{
 			name:  "invalid_header_one_field_missing",
 			input: linesReader("hostname,start_time"),
 			checks: []check{
-				hasError(csvstream.ErrReadingCSV),
+				hasError(ErrReadingCSV),
 			},
 		},
 		{
 			name:  "invalid_csv_row_one_field_missing",
 			input: linesReader("hostname,start_time,end_time", "host_000008,2017-01-01"),
 			checks: []check{
-				hasError(csvstream.ErrReadingCSV),
+				hasError(ErrReadingCSV),
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := make(chan worker.JobParams, 100)
-			err := csvstream.ReadInto(context.Background(), tt.input, results)
+			results := make(chan bench.JobParams, 100)
+			err := ReadInto(context.Background(), tt.input, results)
 			close(results)
 			res := drainResults(results)
 
@@ -135,8 +134,8 @@ func linesReader(lines ...string) *strings.Reader {
 	return strings.NewReader(strings.Join(lines, "\n"))
 }
 
-func drainResults(in <-chan worker.JobParams) []worker.JobParams {
-	out := make([]worker.JobParams, 0)
+func drainResults(in <-chan bench.JobParams) []bench.JobParams {
+	out := make([]bench.JobParams, 0)
 	for r := range in {
 		out = append(out, r)
 	}

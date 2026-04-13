@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"time"
 
+	"github.com/pBiczysko/tsbench/bench"
 	"github.com/pBiczysko/tsbench/csvstream"
-	"github.com/pBiczysko/tsbench/worker"
 )
 
 type config struct {
 	filePath string
+	workers  int
 }
 
 const usage = `Usage: tsbench [flags]
@@ -41,6 +42,7 @@ func run(ctx context.Context) error {
 	var cfg config
 
 	flag.StringVar(&cfg.filePath, "file", "", "CSV file path with query parameters")
+	flag.IntVar(&cfg.workers, "workers", 3, "number of workers to run the queries")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, usage)
 		flag.PrintDefaults()
@@ -61,30 +63,27 @@ func run(ctx context.Context) error {
 		input = f
 	}
 
-	jobs := make(chan worker.JobParams, 10)
+	jobs := make(chan bench.JobParams, 10)
 
 	go func() {
 		err := csvstream.ReadInto(ctx, input, jobs)
 		if err != nil {
+			// TODO: deal with panic
 			panic(err)
 		}
 		close(jobs)
 	}()
+	m := mock{}
+	b := bench.New(jobs, cfg.workers, m)
 
-	results := make(chan worker.Result)
-
-	go func() {
-		for r := range results {
-			fmt.Println(r)
-		}
-	}()
-
-	w := worker.New(jobs, results, func(params worker.JobParams) (time.Duration, error) {
-		return time.Duration(rand.Int64N(100)), nil
-	})
-
-	w.Process(ctx)
-	close(results)
+	summary := b.Process(ctx)
+	fmt.Println(summary)
 
 	return nil
+}
+
+type mock struct{}
+
+func (m mock) GetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error) {
+	return time.Duration(rand.Int63n(100) + 1), nil
 }
