@@ -24,7 +24,6 @@ type config struct {
 	workers      int
 	queryTimeout time.Duration
 	database     string
-	connections  int
 }
 
 const usage = `Usage: tsbench [flags]
@@ -45,7 +44,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	if err := run(ctx, log); err != nil {
-		log.Error("main error", "error", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -57,7 +56,6 @@ func run(ctx context.Context, log *slog.Logger) error {
 	flag.IntVar(&cfg.workers, "workers", 3, "number of workers to run the queries")
 	flag.DurationVar(&cfg.queryTimeout, "query-timeout", 100*time.Millisecond, "query execution timeout")
 	flag.StringVar(&cfg.database, "database", "", "database connection string")
-	flag.IntVar(&cfg.connections, "connections", min(cfg.workers, 20), "number of database connections")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, usage)
 		flag.PrintDefaults()
@@ -75,7 +73,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 	defer input.Close()
 
-	dbPool, err := initDBConn(ctx, cfg.database, cfg.connections)
+	dbPool, err := initDBConn(ctx, cfg.database, cfg.workers)
 	if err != nil {
 		return fmt.Errorf("initializing repository: %w", err)
 	}
@@ -96,6 +94,8 @@ func run(ctx context.Context, log *slog.Logger) error {
 
 	if err := csvstream.ReadInto(ctx, input, jobs); err != nil {
 		close(jobs)
+		// Wait for bench to finish.
+		<-summary
 		return fmt.Errorf("reading csv input: %w", err)
 	}
 	close(jobs)
@@ -112,9 +112,6 @@ func validateConfig(cfg config) error {
 	}
 	if cfg.workers <= 0 {
 		return errors.New("number of workers need to be positive")
-	}
-	if cfg.connections <= 0 {
-		return errors.New("number of connections need to be positive")
 	}
 
 	return nil
@@ -141,14 +138,15 @@ func getCSVinput(filePath string) (io.ReadCloser, error) {
 	return io.NopCloser(bufio.NewReader(os.Stdin)), nil
 }
 
-func initDBConn(ctx context.Context, database string, connections int) (*pgxpool.Pool, error) {
+func initDBConn(ctx context.Context, database string, workers int) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(database)
 	if err != nil {
 		return nil, fmt.Errorf("parsing db pool config: %w", err)
 	}
 
-	poolCfg.MaxConns = int32(connections)
-	poolCfg.MinConns = int32(connections)
+	// Use number of workers as number of connections but limit it not to pass the max_connections.
+	poolCfg.MaxConns = int32(min(workers, 20))
+	poolCfg.MinConns = int32(min(workers, 20))
 	poolCfg.MaxConnLifetime = 30 * time.Minute
 	poolCfg.MaxConnIdleTime = 5 * time.Minute
 	poolCfg.HealthCheckPeriod = 1 * time.Minute
