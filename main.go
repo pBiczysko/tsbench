@@ -33,8 +33,8 @@ Input modes:
   - When --file is not specified, tsbench reads CSV piped through standard input
 
 Examples:
-  tsbench --file data.csv
-  cat data.csv | tsbench
+  tsbench --database <conn> --file data.csv
+  cat data.csv | tsbench --database <conn>
 
 Flags:`
 
@@ -45,9 +45,14 @@ func main() {
 
 	if err := run(ctx, log); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		if errors.Is(err, errInvalidUsage) {
+			flag.Usage()
+		}
 		os.Exit(1)
 	}
 }
+
+var errInvalidUsage = errors.New("invalid usage")
 
 func run(ctx context.Context, log *slog.Logger) error {
 	var cfg config
@@ -64,7 +69,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	flag.Parse()
 
 	if err := validateConfig(cfg); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return fmt.Errorf("invalid config: %w: %w", errInvalidUsage, err)
 	}
 
 	input, err := getCSVinput(cfg.filePath)
@@ -94,7 +99,9 @@ func run(ctx context.Context, log *slog.Logger) error {
 
 	if err := csvstream.ReadInto(ctx, input, jobs); err != nil {
 		close(jobs)
-		// Wait for bench to finish.
+		// Wait for bench.Process to finish.
+		// This is to guarantee clean goroutine finish.
+		// We are exiting main application so it would be killed anyway.
 		<-summary
 		return fmt.Errorf("reading csv input: %w", err)
 	}
@@ -111,13 +118,28 @@ func validateConfig(cfg config) error {
 		return errors.New("database connection string is required")
 	}
 	if cfg.workers <= 0 {
-		return errors.New("number of workers need to be positive")
+		return errors.New("number of workers must be positive")
+	}
+	if cfg.queryTimeout <= 0 {
+		return errors.New("query timeout must be positive")
 	}
 
 	return nil
 }
 
 func getCSVinput(filePath string) (io.ReadCloser, error) {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("getting stdin stat: %w", err)
+	}
+
+	// ModeCharDevice is set when stdin is a terminal. When data is piped, it is not set.
+	stdinHasData := (stat.Mode() & os.ModeCharDevice) == 0
+
+	if filePath != "" && stdinHasData {
+		return nil, fmt.Errorf("%w: cannot use both --file and stdin", errInvalidUsage)
+	}
+
 	if filePath != "" {
 		f, err := os.Open(filePath)
 		if err != nil {
@@ -126,13 +148,9 @@ func getCSVinput(filePath string) (io.ReadCloser, error) {
 
 		return f, nil
 	}
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("getting stdin stat: %w", err)
-	}
 
-	if (stat.Mode() & os.ModeCharDevice) != 0 {
-		return nil, fmt.Errorf("either --file flag needs to be set or data piped into stdin")
+	if !stdinHasData {
+		return nil, fmt.Errorf("%w: either --file flag needs to be set or data piped into stdin", errInvalidUsage)
 	}
 
 	return io.NopCloser(bufio.NewReader(os.Stdin)), nil
