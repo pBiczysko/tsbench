@@ -40,6 +40,9 @@ func New(jobs <-chan JobParams, maxWorkers int, repo repository, log *slog.Logge
 func (b Bench) Process(ctx context.Context) Summary {
 	workerJobs := make([]chan JobParams, b.maxWorkers)
 	for i := range b.maxWorkers {
+		// Buffer of 1 allows distributor to be one job ahead of each worker.
+		// A larger buffer would reduce csv stream blocking but the optimal value
+		// depends on workload.
 		workerJobs[i] = make(chan JobParams, 1)
 	}
 
@@ -147,7 +150,6 @@ func generateSummary(results []result) Summary {
 func getChannelIndex(hostname string, maxWorkers int) int {
 	h := fnv.New32a()
 	h.Write([]byte(hostname))
-	s := int(h.Sum32())
 
-	return s % maxWorkers
+	return int(h.Sum32() % uint32(maxWorkers))
 }

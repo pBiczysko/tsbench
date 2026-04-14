@@ -59,6 +59,14 @@ func TestReadInto(t *testing.T) {
 			},
 		},
 		{
+			name:  "header_only",
+			input: linesReader("hostname,start_time,end_time"),
+			checks: []check{
+				hasNoError(),
+				hasJobParams([]bench.JobParams{}),
+			},
+		},
+		{
 			name:  "invalid_header_hostname",
 			input: linesReader("invalid_host,start_time,end_time"),
 			checks: []check{
@@ -114,11 +122,40 @@ func TestReadInto(t *testing.T) {
 				hasError(ErrReadingCSV),
 			},
 		},
+		{
+			name: "multiple_rows",
+			input: linesReader(
+				"hostname,start_time,end_time",
+				"host_000001,2017-01-01 08:59:22,2017-01-01 09:59:22",
+				"host_000002,2017-01-02 08:59:22,2017-01-02 09:59:22",
+				"host_000003,2017-01-03 08:59:22,2017-01-03 09:59:22",
+			),
+			checks: []check{
+				hasNoError(),
+				hasJobParams([]bench.JobParams{
+					{
+						Hostname:  "host_000001",
+						StartTime: time.Date(2017, 1, 1, 8, 59, 22, 0, time.UTC),
+						EndTime:   time.Date(2017, 1, 1, 9, 59, 22, 0, time.UTC),
+					},
+					{
+						Hostname:  "host_000002",
+						StartTime: time.Date(2017, 1, 2, 8, 59, 22, 0, time.UTC),
+						EndTime:   time.Date(2017, 1, 2, 9, 59, 22, 0, time.UTC),
+					},
+					{
+						Hostname:  "host_000003",
+						StartTime: time.Date(2017, 1, 3, 8, 59, 22, 0, time.UTC),
+						EndTime:   time.Date(2017, 1, 3, 9, 59, 22, 0, time.UTC),
+					},
+				}),
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := make(chan bench.JobParams, 100)
+			results := make(chan bench.JobParams, 10)
 			err := ReadInto(context.Background(), tt.input, results)
 			close(results)
 			res := drainResults(results)
@@ -127,6 +164,24 @@ func TestReadInto(t *testing.T) {
 				ch(t, res, err)
 			}
 		})
+	}
+}
+
+func TestReadIntoContextCanceled(t *testing.T) {
+	input := linesReader(
+		"hostname,start_time,end_time",
+		"host_000001,2017-01-01 08:59:22,2017-01-01 09:59:22",
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	results := make(chan bench.JobParams, 5)
+	err := ReadInto(ctx, input, results)
+	close(results)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
 	}
 }
 

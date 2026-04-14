@@ -19,6 +19,8 @@ import (
 	"github.com/pBiczysko/tsbench/repo"
 )
 
+var errInvalidUsage = errors.New("invalid usage")
+
 type config struct {
 	filePath     string
 	workers      int
@@ -51,8 +53,6 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-var errInvalidUsage = errors.New("invalid usage")
 
 func run(ctx context.Context, log *slog.Logger) error {
 	var cfg config

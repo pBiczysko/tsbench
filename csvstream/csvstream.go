@@ -36,7 +36,7 @@ func ReadInto(ctx context.Context, in io.Reader, out chan<- bench.JobParams) err
 
 	for {
 		record, err := r.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 

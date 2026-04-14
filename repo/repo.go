@@ -21,8 +21,8 @@ func New(pool *pgxpool.Pool, timeout time.Duration) *Repo {
 	}
 }
 
-// MeasureGetCPUUsage acquires a connection from the pool, marks the starting time and then executes the
-// getCPUUsage query. On success it will return the query duration.
+// MeasureGetCPUUsage acquires a connection from the pool first, then measures only the query execution time,
+// excluding connection overhead.
 func (r *Repo) MeasureGetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error) {
 	conn, err := r.pool.Acquire(ctx)
 	if err != nil {
@@ -32,6 +32,7 @@ func (r *Repo) MeasureGetCPUUsage(ctx context.Context, hostname string, start, e
 
 	// Start measuring time after connection was acquired.
 	t := time.Now()
+	// Result is intentionally scanned and discarded to simulate realistic query load.
 	if _, err := r.getCPUUsage(ctx, conn, hostname, start, end); err != nil {
 		return 0, fmt.Errorf("executing getCPUUsage query: %w", err)
 	}
