@@ -3,6 +3,8 @@ package bench
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -103,7 +105,8 @@ func TestProcess(t *testing.T) {
 			}
 			close(jobs)
 			repo := mockRepo{tt.repoResponses}
-			bench := New(jobs, 2, repo)
+			log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+			bench := New(jobs, 2, repo, log)
 			summary := bench.Process(context.Background())
 
 			for _, ch := range tt.checks {
@@ -122,7 +125,7 @@ type mockRepo struct {
 	resp map[string]repoResponse
 }
 
-func (m mockRepo) GetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error) {
+func (m mockRepo) MeasureGetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error) {
 	if resp, ok := m.resp[hostname]; ok {
 		return resp.duration, resp.err
 	}

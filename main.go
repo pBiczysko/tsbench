@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pBiczysko/tsbench/bench"
@@ -15,15 +20,18 @@ import (
 )
 
 type config struct {
-	filePath string
-	workers  int
+	filePath     string
+	workers      int
+	queryTimeout time.Duration
+	database     string
+	connections  int
 }
 
 const usage = `Usage: tsbench [flags]
 
 Input modes:
   - Use --file <path> to read CSV from a file.
-  - When --file is not specified, tsbench reads CSV from standard input
+  - When --file is not specified, tsbench reads CSV piped through standard input
 
 Examples:
   tsbench --file data.csv
@@ -33,16 +41,23 @@ Flags:`
 
 func main() {
 	ctx := context.Background()
-	if err := run(ctx); err != nil {
-		log.Fatalf("main: error: %v", err)
+
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if err := run(ctx, log); err != nil {
+		log.Error("main error", "error", err)
+		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context) error {
+func run(ctx context.Context, log *slog.Logger) error {
 	var cfg config
 
 	flag.StringVar(&cfg.filePath, "file", "", "CSV file path with query parameters")
 	flag.IntVar(&cfg.workers, "workers", 3, "number of workers to run the queries")
+	flag.DurationVar(&cfg.queryTimeout, "query-timeout", 100*time.Millisecond, "query execution timeout")
+	flag.StringVar(&cfg.database, "database", "", "database connection string")
+	flag.IntVar(&cfg.connections, "connections", min(cfg.workers, 20), "number of database connections")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, usage)
 		flag.PrintDefaults()
@@ -50,45 +65,103 @@ func run(ctx context.Context) error {
 
 	flag.Parse()
 
-	pool, err := pgxpool.New(ctx, "postgres://postgres:password@127.0.0.1:5432/homework")
+	if err := validateConfig(cfg); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
+
+	input, err := getCSVinput(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("creating db pool: %w", err)
+		return fmt.Errorf("getting csv input: %w", err)
 	}
-	defer pool.Close()
+	defer input.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("running ping on db: %w", err)
+	dbPool, err := initDBConn(ctx, cfg.database, cfg.connections)
+	if err != nil {
+		return fmt.Errorf("initializing repository: %w", err)
 	}
-	repo := repo.New(pool, 0)
+	defer dbPool.Close()
 
-	var input io.Reader
-	input = os.Stdin
+	repo := repo.New(dbPool, cfg.queryTimeout)
 
-	if cfg.filePath != "" {
-		f, err := os.Open(cfg.filePath)
-		if err != nil {
-			return fmt.Errorf("opening file: %w", err)
-		}
-		defer f.Close()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-		input = f
-	}
-
-	jobs := make(chan bench.JobParams, 201)
-
+	// Jobs is a buffered channel with capacity equal to the number of workers.
+	jobs := make(chan bench.JobParams, cfg.workers)
+	b := bench.New(jobs, cfg.workers, repo, log)
+	summary := make(chan bench.Summary, 1)
 	go func() {
-		err := csvstream.ReadInto(ctx, input, jobs)
-		if err != nil {
-			// TODO: deal with panic
-			panic(err)
-		}
-		close(jobs)
+		summary <- b.Process(ctx)
 	}()
 
-	b := bench.New(jobs, cfg.workers, repo)
+	if err := csvstream.ReadInto(ctx, input, jobs); err != nil {
+		close(jobs)
+		return fmt.Errorf("reading csv input: %w", err)
+	}
+	close(jobs)
 
-	summary := b.Process(ctx)
-	fmt.Println(summary)
+	out := <-summary
+	fmt.Fprint(os.Stdout, out)
 
 	return nil
+}
+
+func validateConfig(cfg config) error {
+	if cfg.database == "" {
+		return errors.New("database connection string is required")
+	}
+	if cfg.workers <= 0 {
+		return errors.New("number of workers need to be positive")
+	}
+	if cfg.connections <= 0 {
+		return errors.New("number of connections need to be positive")
+	}
+
+	return nil
+}
+
+func getCSVinput(filePath string) (io.ReadCloser, error) {
+	if filePath != "" {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("opening file: %w", err)
+		}
+
+		return f, nil
+	}
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("getting stdin stat: %w", err)
+	}
+
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		return nil, fmt.Errorf("either --file flag needs to be set or data piped into stdin")
+	}
+
+	return io.NopCloser(bufio.NewReader(os.Stdin)), nil
+}
+
+func initDBConn(ctx context.Context, database string, connections int) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(database)
+	if err != nil {
+		return nil, fmt.Errorf("parsing db pool config: %w", err)
+	}
+
+	poolCfg.MaxConns = int32(connections)
+	poolCfg.MinConns = int32(connections)
+	poolCfg.MaxConnLifetime = 30 * time.Minute
+	poolCfg.MaxConnIdleTime = 5 * time.Minute
+	poolCfg.HealthCheckPeriod = 1 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating db pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("running ping on db: %w", err)
+	}
+
+	return pool, nil
 }

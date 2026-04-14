@@ -3,7 +3,9 @@ package bench
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -14,18 +16,20 @@ type Bench struct {
 	jobs       <-chan JobParams
 	maxWorkers int
 	repo       repository
+	log        *slog.Logger
 }
 
 type repository interface {
-	GetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error)
+	MeasureGetCPUUsage(ctx context.Context, hostname string, start, end time.Time) (time.Duration, error)
 }
 
 // New creates a new Bench to execute jobs against db with max concurrent workers.
-func New(jobs <-chan JobParams, maxWorkers int, repo repository) Bench {
+func New(jobs <-chan JobParams, maxWorkers int, repo repository, log *slog.Logger) Bench {
 	return Bench{
 		jobs:       jobs,
 		maxWorkers: maxWorkers,
 		repo:       repo,
+		log:        log,
 	}
 }
 
@@ -39,6 +43,12 @@ func (b Bench) Process(ctx context.Context) Summary {
 		workerJobs[i] = make(chan JobParams, 1)
 	}
 
+	closeWorkerJobs := func() {
+		for _, ch := range workerJobs {
+			close(ch)
+		}
+	}
+
 	res := make(chan result, b.maxWorkers)
 
 	wg := sync.WaitGroup{}
@@ -48,14 +58,13 @@ func (b Bench) Process(ctx context.Context) Summary {
 		go b.runWorker(ctx, ch, &wg, res)
 	}
 
+	// Distribute jobs to specific worker channels based on hostname hash.
 	go func() {
+		defer closeWorkerJobs()
+
 		for j := range b.jobs {
 			idx := getChannelIndex(j.Hostname, b.maxWorkers)
 			workerJobs[idx] <- j
-		}
-
-		for _, ch := range workerJobs {
-			close(ch)
 		}
 	}()
 
@@ -72,9 +81,13 @@ func (b Bench) Process(ctx context.Context) Summary {
 func (b Bench) runWorker(ctx context.Context, in <-chan JobParams, wg *sync.WaitGroup, out chan<- result) {
 	defer wg.Done()
 	for j := range in {
-		dur, err := b.repo.GetCPUUsage(ctx, j.Hostname, j.StartTime, j.EndTime)
+		dur, err := b.repo.MeasureGetCPUUsage(ctx, j.Hostname, j.StartTime, j.EndTime)
 		if err != nil {
 			out <- result{failed: true}
+			// Cancelled context will propagate to db.
+			if !errors.Is(err, context.Canceled) {
+				b.log.Error("error executing query", "error", err)
+			}
 			continue
 		}
 		out <- result{duration: dur, failed: false}
