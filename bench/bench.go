@@ -120,27 +120,27 @@ func generateSummary(results []result) Summary {
 		total += r.duration
 	}
 
-	var min time.Duration
-	var max time.Duration
-	var median time.Duration
-	var avg time.Duration
+	var minD time.Duration
+	var maxD time.Duration
+	var medianD time.Duration
+	var avgD time.Duration
 
 	if len(durations) > 0 {
 		slices.Sort(durations)
-		min = durations[0]
-		max = durations[len(durations)-1]
-		median = durations[len(durations)/2]
-		avg = total / time.Duration(len(durations))
+		minD = durations[0]
+		maxD = durations[len(durations)-1]
+		medianD = durations[len(durations)/2]
+		avgD = total / time.Duration(len(durations))
 		if len(durations)%2 == 0 {
-			median = (durations[(len(durations)/2)-1] + durations[len(durations)/2]) / 2
+			medianD = (durations[(len(durations)/2)-1] + durations[len(durations)/2]) / 2
 		}
 	}
 
 	return Summary{
-		MinDuration:    min,
-		MaxDuration:    max,
-		AvgDuration:    avg,
-		MedianDuration: median,
+		MinDuration:    minD,
+		MaxDuration:    maxD,
+		AvgDuration:    avgD,
+		MedianDuration: medianD,
 		TotalTime:      total,
 		TotalCount:     len(durations) + failedCount,
 		FailedCount:    failedCount,

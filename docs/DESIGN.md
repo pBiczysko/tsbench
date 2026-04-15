@@ -65,13 +65,13 @@ All required statistics except the median can be computed incrementally as resul
 
 ### Configuration
 
-The tool is controlled by a small set of configuration parameters:
-* number of concurrent workers, 
-* TimescaleDB connection settings, 
-* query timeout, 
-* input source (CSV file or standard input)
-
-The exact flag names are left out at this stage.  
+The tool is controlled by the following flags:
+| Flag               | Type       | Default    | Description                              |
+| ------------------ | ---------- | ---------- | ---------------------------------------- |
+| `--database`       | `string`   | —          | TimescaleDB connection string (required) |
+| `--file`           | `string`   | —          | Path to input CSV; omit to read stdin    |
+| `--workers`        | `int`      | `3`        | Number of concurrent workers             |
+| `--query-timeout`  | `duration` | `100ms`    | Timeout applied to each query            |  
 
 ### Checkpoint 
 
@@ -79,8 +79,11 @@ Because the tool is designed to handle files of arbitrary size, it is worth cons
 
 
 ## Assumptions
+1. **CSV error handling**: The tool returns an error and halts on a malformed CSV record.
+2. **Query error handling**: An unsuccessful or timed-out query is counted as failed and excluded from the benchmark statistics. 
 
-1. **Checkpoint support**: Assumed out of scope for the implementation to keep the design simple. Happy to revisit if required.
-2. **Median memory usage**: Assumed that storing all query durations in memory is acceptable. 
-3. **CSV error handling**: Assumed the tool should return an error and halt on a malformed CSV record.
-4. **Query error handling**: Assumed that a unsuccessful or timed-out query is counted as failed and excluded from main benchmark statistics. 
+## Potential improvements
+
+* **Checkpoint support**: Resume interrupted runs form the last saved position. See [checkpoint](#checkpoint) for details. 
+* **Approximate median**: Replace exact median (O(n) memory) with a histogram-based estimate for very large input files.
+* **Worker rebalancing**: Detect hostname skew at runtime and rebalance work across workers to avoid hot spots. 

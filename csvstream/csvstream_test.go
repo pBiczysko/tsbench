@@ -176,7 +176,7 @@ func TestReadIntoContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	results := make(chan bench.JobParams, 5)
+	results := make(chan bench.JobParams)
 	err := ReadInto(ctx, input, results)
 	close(results)
 

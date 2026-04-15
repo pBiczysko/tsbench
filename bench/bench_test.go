@@ -85,7 +85,7 @@ func TestProcess(t *testing.T) {
 					MinDuration:    10 * time.Millisecond,
 					MaxDuration:    40 * time.Millisecond,
 					AvgDuration:    25 * time.Millisecond,
-					MedianDuration: 25 * time.Millisecond, //(20 + 30)/2
+					MedianDuration: 25 * time.Millisecond, // (20 + 30)/2
 					TotalTime:      100 * time.Millisecond,
 					TotalCount:     4,
 					FailedCount:    0,

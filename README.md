@@ -20,6 +20,10 @@
 | `TSBENCH_QUERY_TIMEOUT` | `--query-timeout` | Timeout per query      | `100ms`                                                |
 
 
+> **Note:** The database connection string is passed as a plain CLI flag to keep the project simple and focused on benchmarking logic.
+
+
+
 ### Running with Docker Compose
 
 To get up and running quickly:
@@ -80,6 +84,14 @@ or with stdin:
 
 ```bash 
 cat input/query_params.csv | ./tsbench --database "postgres://postgres:password@localhost:5432/homework"
+```
+
+### Testing
+
+Packages are covered with unit test, to run them:
+
+```bash
+go test ./... -race
 ```
 
 ### Output example 
