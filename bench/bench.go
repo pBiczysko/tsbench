@@ -129,8 +129,8 @@ func generateSummary(results []result) Summary {
 		slices.Sort(durations)
 		minD = durations[0]
 		maxD = durations[len(durations)-1]
-		medianD = durations[len(durations)/2]
 		avgD = total / time.Duration(len(durations))
+		medianD = durations[len(durations)/2]
 		if len(durations)%2 == 0 {
 			medianD = (durations[(len(durations)/2)-1] + durations[len(durations)/2]) / 2
 		}
