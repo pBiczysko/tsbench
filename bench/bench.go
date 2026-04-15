@@ -89,7 +89,7 @@ func (b Bench) runWorker(ctx context.Context, in <-chan JobParams, wg *sync.Wait
 			out <- result{failed: true}
 			// Cancelled context will propagate to db.
 			if !errors.Is(err, context.Canceled) {
-				b.log.Error("error executing query", "error", err)
+				b.log.Error("error executing query", "error", err, "hostname", j.Hostname, "start", j.StartTime, "end", j.EndTime)
 			}
 			continue
 		}

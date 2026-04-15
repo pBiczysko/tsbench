@@ -94,6 +94,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 	b := bench.New(jobs, cfg.workers, repo, log)
 	summary := make(chan bench.Summary, 1)
 	go func() {
+		log.Info("starting benchmark", "workers", cfg.workers, "query_timeout", cfg.queryTimeout)
 		summary <- b.Process(ctx)
 	}()
 
